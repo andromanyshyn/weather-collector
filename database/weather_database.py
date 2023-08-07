@@ -1,14 +1,14 @@
 import psycopg2
-from config import db_name, host, password, user
+from config.config import DB_HOST, DB_NAME, DB_PASSWORD, DB_USER
 
 
 def truncate_table():
     try:
         connection = psycopg2.connect(
-            host=host,
-            user=user,
-            password=password,
-            database=db_name
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME
         )
         connection.autocommit = True
         cursor = connection.cursor()
