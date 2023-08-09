@@ -13,8 +13,8 @@ This repository contains an asynchronous Python script that collects weather dat
 1. **Clone the Repository**:
 
     ```bash
-    git clone https://github.com/your-username/async-city-weather-collector.git
-    cd async-city-weather-collector
+    git clone https://github.com/andromanyshyn/weather-collector.git
+    cd weather-collector
     ```
 
 2. **Install Dependencies**:
@@ -50,11 +50,3 @@ This repository contains an asynchronous Python script that collects weather dat
 - You can adjust the **update frequency** by modifying the sleep intervals in the `main` coroutine within `main.py`.
 
 - The script is currently designed to insert weather data into a table named `weather_info`. If needed, you can modify the **database schema and insertion logic** within the `insert_data` coroutine in `main.py`.
-
-## Contributing
-
-Contributions are welcome! If you encounter issues or wish to introduce new features, please feel free to **open a pull request**.
-
-## License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for more details.
