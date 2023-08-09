@@ -1,110 +1,88 @@
-import time
+import asyncio
 
-import psycopg2
-import requests
-from bs4 import BeautifulSoup
+import aiohttp
 
-from config.config import DB_NAME, DB_HOST, DB_PASSWORD, DB_USER, API_KEY
-from database.weather_database import truncate_table
 from collector.cities import cities
+from config.config import API_KEY
+from database.weather_database import database_connect, truncate_table
 
 
-class CityWeather():
+class CityWeather:
     def __init__(self, list_cities):
         self.list_cities = list_cities
         self.api_key = API_KEY
 
-    def get_city_names(self):
-        cities_eng = []
-        for city in self.list_cities:
-            url = f'https://api.openweathermap.org/data/2.5/weather?q={city}&appid={self.api_key}&units=metric'
-            response = requests.get(url=url)
-            data = response.json()
-            key = 'name'
-            if key in data:
-                cities_eng.append(data['name'])
-        return cities_eng
+    async def fetch_weather_data(self, session, city):
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={self.api_key}&units=metric"
+        async with session.get(url=url) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
 
-    def get_city_temperatures(self):
-        list_temperature = []
-        for city in cities():
-            url = f'https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric'
-            response = requests.get(url=url)
-            data = response.json()
-            if 'main' in data and 'temp' in data['main']:
-                list_temperature.append(f"{round(data['main']['temp'])}")
-        return list_temperature
+    async def get_city_names(self):
+        tasks = []
+        async with aiohttp.ClientSession() as session:
+            for city in self.list_cities:
+                task = self.fetch_weather_data(session, city)
+                tasks.append(task)
+            results = await asyncio.gather(*tasks)
+            cities_eng = [data["name"] for data in results if data is not None]
+            return cities_eng
+
+    async def get_city_temperatures(self):
+        tasks = []
+        async with aiohttp.ClientSession() as session:
+            for city in self.list_cities:
+                task = self.fetch_weather_data(session, city)
+                tasks.append(task)
+            results = await asyncio.gather(*tasks)
+            list_temperature = [
+                data["main"]["temp"] for data in results if data is not None
+            ]
+            return list_temperature
 
 
-eng_cities = CityWeather(cities())
-print(eng_cities.get_city_names())
-print(eng_cities.get_city_temperatures())
+async def insert_data(cities, temperatures):
+    connection = database_connect()
+    try:
+        connection.autocommit = True
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS weather_info
+                (
+                    weather_id SERIAL PRIMARY KEY,
+                    city VARCHAR(40) NOT NULL,
+                    celsius FLOAT NOT NULL
+                );
+                """
+            )
 
-# def get_weather_city():
-#     list_cities = []
-#     list_temperature = []
-#
-#     for city in cities():
-#         url = f'https://api.openweathermap.org/data/2.5/weather?q={city}&appid={API_KEY}&units=metric'
-#         response = requests.get(url=url)
-#         res = response.json()
-#         key = 'name'
-#
-#         if key in res:
-#             list_cities.append(res['name'])
-#             list_temperature.append(f"{round(res['main']['temp'])}")
-#     print(list_cities)
-#
-#
-# get_weather_city()
-#
-# try:
-#     connection = psycopg2.connect(
-#         host=DB_HOST,
-#         user=DB_USER,
-#         password=DB_PASSWORD,
-#         database=DB_NAME
-#     )
-#     connection.autocommit = True
-#     cursor = connection.cursor()
-#
-#     cursor.execute(
-#         """
-#         CREATE TABLE IF NOT EXISTS weather_info
-#         (
-#             weather_id SERIAL PRIMARY KEY,
-#             city VARCHAR(40) NOT NULL,
-#             celsius FLOAT NOT NULL
-#         );
-#         """
-#     )
-#     print('Data load started')
-#
-#         for celcius, city in enumerate(list_cities):
-#             cursor.execute(
-#                 f"""
-#                 INSERT INTO weather_info(city, celsius)
-#                 VALUES
-#                 ('{city}', {list_temperature[celcius]});
-#                  """
-#             )
-#         print('[INFO] Data loaded successful')
-#         # print(f'[DATA FETCH] {cursor.fetchall()}')
-#
-#     except Exception as ex:
-#         print(f'[ERROR] PostgreSQL got into troubles {ex}')
-#     finally:
-#         if connection:
-#             cursor.close()
-#             connection.close()
-#
-#
-# def main():
-#     while True:
-#         get_weather_city()
-#         time.sleep(60)
-#         truncate_table()
-#
-#
-# if __name__ == '__main__':
-#     main()
+            for indx, city in enumerate(cities):
+                print("Data load started")
+                cursor.execute(
+                    """
+                    INSERT INTO weather_info(city, celsius)
+                    VALUES (%s, %s);
+                    """,
+                    (city, temperatures[indx]),
+                )
+            print("[INFO] Data loaded successful")
+    except Exception as ex:
+        print(f"[ERROR] PostgreSQL got into troubles {ex}")
+
+
+async def main():
+    weather = CityWeather(cities())
+    get_cities = await weather.get_city_names()
+    get_city_temperature = await weather.get_city_temperatures()
+    while True:
+        await insert_data(get_cities, get_city_temperature)
+        await asyncio.sleep(10)
+        truncate_table()
+        await asyncio.sleep(10)
+
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
